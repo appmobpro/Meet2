@@ -1,0 +1,28 @@
+PODS:
+  - Alamofire (4.7.1)
+  - APIKit (3.2.1):
+    - Result (~> 3.0)
+  - HydraAsync (1.2.1)
+  - Result (3.2.4)
+
+DEPENDENCIES:
+  - Alamofire
+  - APIKit
+  - HydraAsync
+
+SPEC REPOS:
+  https://github.com/cocoapods/specs.git:
+    - Alamofire
+    - APIKit
+    - HydraAsync
+    - Result
+
+SPEC CHECKSUMS:
+  Alamofire: 68d7d521118d49c615a8d2214d87cdf525599d30
+  APIKit: a39ff72ac44efc15513fd1b98800f63c525be61b
+  HydraAsync: 8f2ab62d57e140b4ca587ae0f66e1eb04e8e6965
+  Result: d2d07204ce72856f1fd9130bbe42c35a7b0fea10
+
+PODFILE CHECKSUM: 965e84a12432e75408a94b4e3973e7b80382bc5b
+
+COCOAPODS: 1.5.2
