@@ -33,6 +33,15 @@ enum EventType {
         }
     }
 
+    var eventURL: URL {
+        switch self {
+        case .atnd(let event):
+            return URL(string: event.event_url)!
+        case .connpass(let event):
+            return URL(string: event.event_url)!
+        }
+    }
+
     var service: String {
         switch self {
         case .atnd:
@@ -43,14 +52,13 @@ enum EventType {
     }
 }
 
-let eventType = EventType.atnd(AtndAPI.Event(title: "title"))
-
 class EventsSearchViewController: UIViewController {
 
     @IBOutlet weak var tableView: UITableView!
     @IBOutlet weak var searchBar: UISearchBar!
 
-    var events = [AtndAPI.Event]()
+    let cache = NSCache<NSString, NSString>()
+    var events = [EventType]()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -61,25 +69,13 @@ class EventsSearchViewController: UIViewController {
         // 両方の結果を待って
         // 検索結果を表示する
 
-        async { _ -> ([AtndAPI.Event]) in
-            print("async")
-            let events = try await(self.searchAtnd(keyword: "swift"))
-            print(events)
-
-            return events
-
-        }.then { events in
-            self.events = events
-            self.tableView.reloadData()
-        }.catch { error in
-            print(error)
-        }
-
     }
 }
+
 extension EventsSearchViewController {
 
     func searchConnpass(keyword: String) -> Promise<[ConnpassAPI.Event]> {
+        print("-- search connpass --")
 
         return Promise<[ConnpassAPI.Event]> { (resolve, reject, _) in
 
@@ -88,6 +84,7 @@ extension EventsSearchViewController {
                 switch result {
                 case .success(let response):
                     // 成功
+                    print("-- success connpass --")
                     print(response)
                     resolve(response.events)
                 case .failure(let error):
@@ -99,6 +96,7 @@ extension EventsSearchViewController {
     }
 
     func searchAtnd(keyword: String) -> Promise<[AtndAPI.Event]> {
+        print("-- search atnd --")
 
         return Promise<[AtndAPI.Event]> { (resolve, reject, _) in
 
@@ -107,6 +105,7 @@ extension EventsSearchViewController {
                 switch result {
                 case .success(let response):
                     // 成功
+                    print("-- success atnd --")
                     print(response)
                     resolve(response.events.map { $0.event })
                 case .failure(let error):
@@ -116,20 +115,71 @@ extension EventsSearchViewController {
             }
         }
     }
+
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "goDetail" {
+            let selectedIndex = tableView.indexPathForSelectedRow!
+            // TODO: キャッシュのhtmlを開けるようにする
+            let url = events[selectedIndex.row].eventURL
+            let vc = segue.destination as! DetailViewController
+            vc.loadViewIfNeeded()
+            vc.webView.load(URLRequest(url: url))
+        }
+    }
 }
+
 extension EventsSearchViewController: UITableViewDataSource {
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-
         return events.count
-
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
-
         cell.textLabel?.text = events[indexPath.row].title
+        cell.detailTextLabel?.text = events[indexPath.row].service
+
         return cell
+    }
+}
+
+extension EventsSearchViewController: UISearchBarDelegate {
+
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        async { _ -> ([EventType]) in
+            print("async")
+
+            let (atndEvents, connpassEvents) = try await(Promise<Void>.zip(
+                self.searchAtnd(keyword: searchText),
+                self.searchConnpass(keyword: searchText)
+            ))
+
+            let events: [EventType] = atndEvents.map { .atnd($0) } + connpassEvents.map { .connpass($0) }
+
+            return events
+
+        }.then { events -> [EventType] in
+            self.events = events
+            self.tableView.reloadData()
+            return events
+        }.then(in: .background) { events in
+            // TODO: ここで各イベントのhtmlをキャッシュする
+            events.forEach { event in
+                self.cache.setObject("value", forKey: event.eventURL.absoluteString as NSString)
+            }
+        }.catch { error in
+            print(error)
+        }
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.endEditing(true)
+    }
+}
+
+extension EventsSearchViewController: UIScrollViewDelegate {
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        searchBar.endEditing(true)
     }
 }

@@ -21,6 +21,7 @@ struct AtndAPI {
 
     struct Event: Decodable {
         let title: String
+        let event_url: String
     }
 }
 
