@@ -58,7 +58,11 @@ class EventsSearchViewController: UIViewController {
     @IBOutlet weak var searchBar: UISearchBar!
 
     let cache = NSCache<NSString, NSString>()
-    var events = [EventType]()
+    var events = [EventType]() {
+        didSet {
+            async(in: .main) { self.tableView.reloadData() }
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -70,6 +74,7 @@ class EventsSearchViewController: UIViewController {
         // 検索結果を表示する
 
     }
+    
 }
 
 extension EventsSearchViewController {
@@ -119,11 +124,12 @@ extension EventsSearchViewController {
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         if segue.identifier == "goDetail" {
             let selectedIndex = tableView.indexPathForSelectedRow!
-            // TODO: キャッシュのhtmlを開けるようにする
             let url = events[selectedIndex.row].eventURL
+            let urlString = events[selectedIndex.row].eventURL.absoluteString as NSString
+            let html = cache.object(forKey: urlString)!
             let vc = segue.destination as! DetailViewController
             vc.loadViewIfNeeded()
-            vc.webView.load(URLRequest(url: url))
+            vc.webView.loadHTMLString(String(html), baseURL:url.baseURL)
         }
     }
 }
@@ -146,7 +152,7 @@ extension EventsSearchViewController: UITableViewDataSource {
 extension EventsSearchViewController: UISearchBarDelegate {
 
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-        async { _ -> ([EventType]) in
+        async { _ in
             print("async")
 
             let (atndEvents, connpassEvents) = try await(Promise<Void>.zip(
@@ -156,16 +162,12 @@ extension EventsSearchViewController: UISearchBarDelegate {
 
             let events: [EventType] = atndEvents.map { .atnd($0) } + connpassEvents.map { .connpass($0) }
 
-            return events
-
-        }.then { events -> [EventType] in
             self.events = events
-            self.tableView.reloadData()
-            return events
-        }.then(in: .background) { events in
-            // TODO: ここで各イベントのhtmlをキャッシュする
-            events.forEach { event in
-                self.cache.setObject("value", forKey: event.eventURL.absoluteString as NSString)
+            
+            let promises = events.map(getHtml)
+            let htmlTexts = try await(all(promises, concurrency: 4))
+            htmlTexts.forEach { (html, url) in
+                self.cache.setObject(html as NSString, forKey: url as NSString)
             }
         }.catch { error in
             print(error)
@@ -174,6 +176,14 @@ extension EventsSearchViewController: UISearchBarDelegate {
 
     func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
         searchBar.endEditing(true)
+    }
+}
+
+private func getHtml(event: EventType) -> Promise <(html: String, url: String)> {
+    return Promise { resolve, reject, _ in
+        guard let text = try? String(contentsOf: event.eventURL) else {
+            reject(fatalError() as! Error) }
+        resolve((text, event.eventURL.absoluteString))
     }
 }
 
